@@ -16,3 +16,7 @@
 # Benchmark and temp outputs
 *.log
 *.tmp
+
+# Generated benchmark fixtures and reports
+/.benchdata/
+/reports/

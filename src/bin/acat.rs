@@ -1,11 +1,12 @@
 use std::env;
 use std::fs;
-use std::io::{BufRead, BufReader};
+use std::io::{self, BufRead, BufReader, BufWriter, Write};
 
-use ai_linux_tools::{compact_text_for_ai, to_base36, truncate_for_ai};
+use ai_linux_tools::{TextPacker, compact_text_for_ai, compact_text_light, truncate_for_ai};
 
 fn main() {
     let mut pack = false;
+    let mut aggressive = false;
     let mut max_lines: usize = usize::MAX;
     let mut file = String::new();
 
@@ -13,6 +14,7 @@ fn main() {
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--pack" => pack = true,
+            "--aggressive" => aggressive = true,
             "--max" => {
                 if let Some(v) = args.next() {
                     max_lines = v.parse().unwrap_or(usize::MAX);
@@ -23,7 +25,7 @@ fn main() {
     }
 
     if file.is_empty() {
-        eprintln!("usage: acat [--pack] [--max N] <file>");
+        eprintln!("usage: acat [--pack] [--aggressive] [--max N] <file>");
         std::process::exit(2);
     }
 
@@ -35,9 +37,13 @@ fn main() {
         }
     };
     let reader = BufReader::new(handle);
+    let stdout = io::stdout();
+    let mut out = BufWriter::new(stdout.lock());
 
+    let mut text_packer = TextPacker::default();
+    let use_delta_text = aggressive && max_lines <= 1500;
     if pack {
-        println!("@ap1\tacat\tfields=l36,txtc");
+        let _ = writeln!(out, "@ap2\tacat\tfields=txtp");
     }
 
     for (idx, line) in reader.lines().enumerate() {
@@ -49,11 +55,23 @@ fn main() {
         };
 
         if pack {
-            let l36 = to_base36((idx + 1) as u64);
-            let txt = truncate_for_ai(&compact_text_for_ai(&line), 220);
-            println!("{}\t{}", l36, txt);
+            let base = if aggressive {
+                compact_text_for_ai(&line)
+            } else {
+                compact_text_light(&line)
+            };
+            let txt = truncate_for_ai(&base, 220);
+            if txt.is_empty() {
+                continue;
+            }
+            let packed = if use_delta_text {
+                text_packer.pack(&txt)
+            } else {
+                txt
+            };
+            let _ = writeln!(out, "{}", packed);
         } else {
-            println!("{}", line);
+            let _ = writeln!(out, "{}", line);
         }
     }
 }

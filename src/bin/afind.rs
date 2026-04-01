@@ -11,12 +11,10 @@ fn search(
     include_hidden: bool,
     ignore_case: bool,
     only_type: Option<char>,
-    pack: bool,
-    path_packer: &mut PathPacker,
     max_results: usize,
-    count: &mut usize,
+    out: &mut Vec<String>,
 ) {
-    if *count >= max_results {
+    if out.len() >= max_results {
         return;
     }
 
@@ -24,7 +22,7 @@ fn search(
         return;
     };
     for entry in read_dir.flatten() {
-        if *count >= max_results {
+        if out.len() >= max_results {
             break;
         }
         let path = entry.path();
@@ -55,13 +53,8 @@ fn search(
         };
 
         if matched && type_ok {
-            if pack {
-                println!("{}", path_packer.pack(&path.display().to_string()));
-            } else {
-                println!("{}", path.display());
-            }
-            *count += 1;
-            if *count >= max_results {
+            out.push(path.display().to_string());
+            if out.len() >= max_results {
                 break;
             }
         }
@@ -74,10 +67,8 @@ fn search(
                 include_hidden,
                 ignore_case,
                 only_type,
-                pack,
-                path_packer,
                 max_results,
-                count,
+                out,
             );
         }
     }
@@ -129,12 +120,7 @@ fn main() {
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("."));
 
-    if pack {
-        println!("@ap1\tafind\tfields=pd");
-    }
-
-    let mut path_packer = PathPacker::default();
-    let mut count = 0usize;
+    let mut results = Vec::new();
     search(
         &root,
         &needle,
@@ -142,9 +128,21 @@ fn main() {
         include_hidden,
         ignore_case,
         only_type,
-        pack,
-        &mut path_packer,
         max_results,
-        &mut count,
+        &mut results,
     );
+
+    results.sort();
+    if pack {
+        let mut path_packer = PathPacker::default();
+        let root_prefix = format!("{}/", root.display());
+        for path in results.into_iter().take(max_results) {
+            let rel = path.strip_prefix(&root_prefix).unwrap_or(&path).to_string();
+            println!("{}", path_packer.pack(&rel));
+        }
+    } else {
+        for path in results.into_iter().take(max_results) {
+            println!("{}", path);
+        }
+    }
 }
