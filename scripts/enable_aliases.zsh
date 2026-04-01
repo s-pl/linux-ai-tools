@@ -1,0 +1,6 @@
+alias ls='als'
+alias cat='acat'
+alias grep='agrep'
+alias find='afind'
+alias du='adu'
+alias ps='aps'
