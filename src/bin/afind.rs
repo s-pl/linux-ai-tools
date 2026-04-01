@@ -138,6 +138,7 @@ fn main() {
     let mut out = BufWriter::new(stdout.lock());
 
     if pack {
+        writeln!(out, "@ap1\tafind\tfields=pd").unwrap();
         let mut path_packer = PathPacker::default();
         let root_prefix = format!("{}/", root.display());
         for path in results.into_iter().take(max_results) {

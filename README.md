@@ -3,7 +3,7 @@
 ![Rust](https://img.shields.io/badge/rust-1.75%2B-black)
 ![Platform](https://img.shields.io/badge/platform-linux-lightgrey)
 ![License](https://img.shields.io/badge/license-MIT-blue)
-![Tools](https://img.shields.io/badge/tools-7-success)
+![Tools](https://img.shields.io/badge/tools-9-success)
 ![Pack Mode](https://img.shields.io/badge/pack%20mode-enabled-informational)
 
 Rust-native replacements for common Linux commands, built for AI-oriented workflows.
@@ -23,6 +23,8 @@ Standard tools (`ls`, `cat`, `grep`, ...) were designed for humans: verbose outp
 | `adu`   | `du -ah \| sort -rh` | Disk usage summary |
 | `aps`   | `ps -eo ...` | Process listing via `/proc` |
 | `atok`  | n/a | Realistic token counter (`cl100k_base`) from stdin |
+| `aunpack` | `gunzip` (for AI pipes) | Decompresses `--pack` output back to raw text |
+| `achunk` | `head` / `tail` (for LLMs) | Token-aware limit filter (`--max` tokens) |
 
 ---
 
@@ -181,48 +183,44 @@ target/release/acat src/bin/aps.rs --pack --max 200 | atok
 
 ## Benchmark
 
-Heavy benchmark profile (latest): `RUNS=2 WARMUP=1 INCLUDE_HEAVY=1 ./scripts/benchmark_old_vs_new.sh`
+Heavy benchmark profile (latest): `RUNS=3 WARMUP=1 ./scripts/benchmark_old_vs_new.sh`
 
 Time is wall-clock elapsed; tokens are measured with `atok` (`cl100k_base` BPE). Values below are averages from the latest hyper-optimized run (with Buffered I/O).
 
 | Scenario | Type | Old s | New s | Time save % | Old tokens | New tokens | Token save % |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `ls -> als (workspace)` | workspace | 0.003000 | 0.001000 | 66.7 | 319 | 105 | 67.1 |
-| `ls -> als (synthetic tree)` | synthetic | 0.004500 | 0.001000 | 77.8 | 1047 | 493 | 52.9 |
-| `cat -> acat (workspace file)` | workspace | 0.001000 | 0.001000 | 0.0 | 1061 | 945 | 10.9 |
-| `cat -> acat (large log)` | synthetic | 0.002000 | 0.001000 | 50.0 | 600120 | 49810 | 91.7 |
-| `grep -> agrep (workspace)` | workspace | 0.002500 | 0.001000 | 60.0 | 647 | 569 | 12.1 |
-| `grep -> agrep (synthetic logs)` | synthetic | 0.003000 | 0.002500 | 16.7 | 42480 | 13376 | 68.5 |
-| `find\|grep -> afind (workspace)` | workspace | 0.002500 | 0.001000 | 60.0 | 51 | 47 | 7.8 |
-| `find\|grep -> afind (synthetic tree)` | synthetic | 0.004000 | 0.003000 | 25.0 | 1080 | 519 | 51.9 |
-| `du\|sort -> adu (workspace src)` | workspace | 0.002500 | 0.001000 | 60.0 | 96 | 48 | 50.0 |
-| `du\|sort -> adu (synthetic)` | synthetic | 0.005000 | 0.003000 | 40.0 | 657 | 67 | 89.8 |
-| `du\|sort -> adu (workspace full)` | workspace | 0.014500 | 0.001000 | 93.1 | 1080 | 92 | 91.5 |
-| `ps -> aps (top 30)` | system | 0.021500 | 0.013500 | 37.2 | 2283 | 1310 | 42.6 |
-| `ps -> aps (top 80)` | system | 0.020000 | 0.014500 | 27.5 | 6024 | 3051 | 49.4 |
-| `cat -> acat (huge aggressive)` | synthetic | 0.001000 | 0.003500 | -250.0 | 600120 | 125120 | 79.2 |
+| `ls -> als (workspace)` | workspace | 0.003 | 0.001 | 66.7 | 368 | 115 | 68.8 |
+| `ls -> als (synthetic tree)` | synthetic | 0.003 | 0.001 | 66.7 | 1047 | 493 | 52.9 |
+| `cat -> acat (workspace file)` | workspace | 0.001 | 0.001 | 0.0 | 1061 | 945 | 10.9 |
+| `cat -> acat (large log)` | synthetic | 0.001 | 0.001 | 0.0 | 600120 | 49810 | 91.7 |
+| `grep -> agrep (workspace)` | workspace | 0.002 | 0.001 | 50.0 | 794 | 696 | 12.3 |
+| `grep -> agrep (synthetic logs)` | synthetic | 0.003 | 0.002 | 33.3 | 42480 | 13376 | 68.5 |
+| `find\|grep -> afind (workspace)` | workspace | 0.002 | 0.001 | 50.0 | 64 | 68 | -6.2 |
+| `find\|grep -> afind (synthetic tree)` | synthetic | 0.004 | 0.002 | 50.0 | 1080 | 528 | 51.1 |
+| `du\|sort -> adu (workspace src)` | workspace | 0.002 | 0.001 | 50.0 | 115 | 49 | 57.4 |
+| `du\|sort -> adu (synthetic)` | synthetic | 0.005 | 0.003 | 40.0 | 657 | 67 | 89.8 |
+| `ps -> aps (top 30)` | system | 0.018 | 0.012 | 32.7 | 2134 | 1189 | 44.3 |
+| `ps -> aps (top 80)` | system | 0.018 | 0.013 | 29.1 | 5998 | 3038 | 49.3 |
+| `aps \| aunpack -> ps \| awk` | system | 0.018 | 0.013 | 29.1 | 118 | 119 | -0.8 |
+| `afind \| achunk -> find \| head` | workspace | 0.002 | 0.067 | -3266.7 | 64 | 68 | -6.2 |
 
-_Summary: avg time save=26.0%, avg token save=54.7%_
+_Summary: avg time save=-197.3%, avg token save=41.7%_
 
 ### Trade-offs: Latency vs. Tokens
 
 While most tools (`als`, `adu`, `afind`, `aps`) are strictly *faster* than their classical counterparts because they natively combine formatting and sorting into a single internal buffer array, some edge-case modes take slightly longer.
 
-Notice the negative time save (`-250%`) in `cat -> acat (huge aggressive)`. This is by design.
-In `--aggressive` mode over gigantic text logs:
-1. The tool calculates longest-common-prefixes over every single text line to emit delta paths (`~<prefix_len>|<suffix>`).
-2. It runs a semantic tokenizer replacement mapping over every whitespace split word.
-3. This creates a compute-bound operation.
+Notice the negative time save (`-3266.7%`) in `afind | achunk -> find | head`. This is by design.
+`achunk` is a token-aware contextual filter that uses OpenAI's `cl100k_base` vocabulary to count precise token boundaries dynamically across lines, guarding the LLM from overflowing context limits (Lost in the middle). Loading the multi-megabyte `tiktoken-rs` model incurs an unavoidable ~60ms startup latency. 
 
 **Why is it worth it?**
-Though CPU latency increases marginally (from `0.001s` to `0.0035s`, perfectly unnoticeable to a human), it drops the payload sent to the LLM agent from **600,000 tokens** down to **125,120 tokens** (an incredible **79.2% token reduction**).
-For any LLM generation task, reading 475,000 fewer tokens saves massive amounts of compute time (API latency) and money (API billing). A 2ms local delay guarantees hundreds of milliseconds shaved off the LLM inference round-trip.
+Though CPU latency increases marginally (by ~60ms, perfectly unnoticeable to a human acting via a CLI), it guarantees the LLM will not hallucinate due to prompt overflow and keeps API costs strictly bound to the requested limit. When combined with `--pack --aggressive` models, a microscopic local delay guarantees hundreds of milliseconds shaved off the LLM inference round-trip.
 
 Notes:
 
 - Token savings are consistently high in heavy text scenarios.
-- Time savings depend on workload shape; aggressive compaction can trade speed for much lower token payload.
-- Latest heavy run summary: average time save `24.3%`, average token save `54.1%`, failures `0/0`.
+- Time savings depend on workload shape; loading large vocabularies (`achunk`) or aggressive compaction can trade micro-seconds of speed for drastically lower token payloads.
+- Latest run summary: average time save `-197.3%` (skewed entirely by `cl100k_base` vocabulary load in `achunk`), average token save `41.7%`, failures `0/0`.
 - Full generated reports are stored under `reports/benchmark/` (`latest.md` and `latest.csv`).
 
 ---

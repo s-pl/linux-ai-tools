@@ -279,3 +279,122 @@ impl TextPacker {
         out
     }
 }
+
+pub fn from_base36(encoded: &str) -> u64 {
+    let mut value: u64 = 0;
+    for c in encoded.chars() {
+        let digit = match c {
+            '0'..='9' => c as u64 - '0' as u64,
+            'a'..='z' => c as u64 - 'a' as u64 + 10,
+            _ => return 0, // Fallback on invalid format
+        };
+        value = value.saturating_mul(36).saturating_add(digit);
+    }
+    value
+}
+
+#[derive(Default)]
+pub struct PathUnpacker {
+    prev: String,
+}
+
+impl PathUnpacker {
+    pub fn unpack(&mut self, packed: &str) -> String {
+        let out = if packed.starts_with('~') {
+            if let Some(idx) = packed.find('|') {
+                let prefix_len = from_base36(&packed[1..idx]) as usize;
+                let suffix = &packed[idx + 1..];
+                if prefix_len <= self.prev.len() {
+                    format!("{}{}", &self.prev[..prefix_len], suffix)
+                } else {
+                    packed.to_string() // Fallback
+                }
+            } else {
+                packed.to_string()
+            }
+        } else {
+            packed.to_string()
+        };
+        self.prev = out.clone();
+        out
+    }
+}
+
+// TextUnpacker is functionally identical but kept for parity.
+#[derive(Default)]
+pub struct TextUnpacker {
+    prev: String,
+}
+
+impl TextUnpacker {
+    pub fn unpack(&mut self, packed: &str) -> String {
+        let out = if packed.starts_with('~') {
+            if let Some(idx) = packed.find('|') {
+                let prefix_len = from_base36(&packed[1..idx]) as usize;
+                let suffix = &packed[idx + 1..];
+                if prefix_len <= self.prev.len() {
+                    format!("{}{}", &self.prev[..prefix_len], suffix)
+                } else {
+                    packed.to_string()
+                }
+            } else {
+                packed.to_string()
+            }
+        } else {
+            packed.to_string()
+        };
+        self.prev.clear();
+        self.prev.push_str(&out);
+        out
+    }
+}
+
+pub fn expand_text_for_ai(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    let mut i = 0;
+    let bytes = input.as_bytes();
+    while i < bytes.len() {
+        if bytes[i] == b'#' {
+            // Find end of base36 number
+            let mut j = i + 1;
+            while j < bytes.len() && bytes[j].is_ascii_alphanumeric() {
+                j += 1;
+            }
+            if j > i + 1 {
+                let num_str = std::str::from_utf8(&bytes[i + 1..j]).unwrap_or("");
+                let decoded = from_base36(num_str);
+                out.push_str(&decoded.to_string());
+                i = j;
+                continue;
+            }
+        }
+        out.push(bytes[i] as char);
+        i += 1;
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_base36_roundtrip() {
+        assert_eq!(to_base36(123456789), to_base36(from_base36(&to_base36(123456789))));
+    }
+
+    #[test]
+    fn test_path_packer_roundtrip() {
+        let mut packer = PathPacker::default();
+        let mut unpacker = PathUnpacker::default();
+
+        let p1 = "/var/log/syslog";
+        let p2 = "/var/log/auth.log";
+        
+        let c1 = packer.pack(p1);
+        let c2 = packer.pack(p2);
+        
+        assert_eq!(unpacker.unpack(&c1), p1);
+        assert_eq!(unpacker.unpack(&c2), p2);
+    }
+}

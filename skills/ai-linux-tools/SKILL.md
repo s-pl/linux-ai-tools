@@ -40,6 +40,8 @@ Help AI assistants guide end users in selecting and using the right `ai-linux-to
 - `du -ah <path> | sort -rh | head -n N` -> `adu <path> --max N`
 - `ps -eo pid,ppid,state,rss,comm,args --sort=-rss | head -n N` -> `aps --max N`
 - token counting from stdin -> `atok`
+- `gunzip / awk` (for packed streams) -> `aunpack`
+- `head / tail` (limit by tokens for LLMs) -> `achunk --max N`
 
 ## Quick Recipes
 
@@ -159,3 +161,8 @@ Performance notes:
 - Explain only the flags used in the example.
 - Warn when packed output is optimized for machines over human readability.
 - When asked about performance, mention that tiny inputs may show neutral timing while still reducing tokens.
+
+## Unix Pipelining
+
+- `aunpack`: Use to decompress packed streams into plain text for bash scripts. `aps --pack | aunpack`
+- `achunk`: A filter that reads all lines and preserves the beginning and end, truncating the middle (lost-in-the-middle) to fit `--max` tokens exact count using `cl100k_base`.
