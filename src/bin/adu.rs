@@ -1,5 +1,6 @@
 use std::env;
 use std::fs;
+use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
 
 use ai_linux_tools::{PathPacker, human_bytes, is_hidden, skip_heavy_dir, to_base36};
@@ -79,19 +80,24 @@ fn main() {
 
     rows.sort_by(|a, b| b.0.cmp(&a.0));
     let mut path_packer = PathPacker::default();
+    let stdout = io::stdout();
+    let mut out = BufWriter::new(stdout.lock());
+
     if pack {
-        println!("@ap1\tadu\tfields=s36,sh,pd");
+        writeln!(out, "@ap1\tadu\tfields=s36,sh,pd").unwrap();
     }
     for (size, path) in rows.into_iter().take(max_results) {
         if pack {
-            println!(
+            writeln!(
+                out,
                 "{}\t{}\t{}",
                 to_base36(size),
                 human_bytes(size),
                 path_packer.pack(&path)
-            );
+            ).unwrap();
         } else {
-            println!("{}\t{}\t{}", size, human_bytes(size), path);
+            writeln!(out, "{}\t{}\t{}", size, human_bytes(size), path).unwrap();
         }
     }
+    out.flush().unwrap();
 }

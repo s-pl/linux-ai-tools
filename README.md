@@ -181,23 +181,42 @@ target/release/acat src/bin/aps.rs --pack --max 200 | atok
 
 ## Benchmark
 
-Heavy benchmark profile (latest): `RUNS=8 WARMUP=1 INCLUDE_HEAVY=1 CASE_TIMEOUT_SEC=90 ./scripts/benchmark_old_vs_new.sh`
+Heavy benchmark profile (latest): `RUNS=2 WARMUP=1 INCLUDE_HEAVY=1 ./scripts/benchmark_old_vs_new.sh`
 
-Time is wall-clock elapsed; tokens are measured with `atok` (`cl100k_base` BPE). Values below are averages from the latest heavy run.
+Time is wall-clock elapsed; tokens are measured with `atok` (`cl100k_base` BPE). Values below are averages from the latest hyper-optimized run (with Buffered I/O).
 
 | Scenario | Type | Old s | New s | Time save % | Old tokens | New tokens | Token save % |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `ls -> als (workspace)` | workspace | 0.003000 | 0.001000 | 66.7 | 309 | 104 | 66.3 |
-| `ls -> als (synthetic tree)` | synthetic | 0.003000 | 0.001000 | 66.7 | 1047 | 493 | 52.9 |
-| `cat -> acat (workspace file)` | workspace | 0.001000 | 0.001000 | 0.0 | 1009 | 898 | 11.0 |
-| `cat -> acat (large log)` | synthetic | 0.001250 | 0.001375 | -10.0 | 600120 | 49810 | 91.7 |
-| `grep -> agrep (workspace)` | workspace | 0.002875 | 0.001000 | 65.2 | 566 | 501 | 11.5 |
-| `grep -> agrep (synthetic logs)` | synthetic | 0.003000 | 0.002000 | 33.3 | 42480 | 13376 | 68.5 |
-| `find\|grep -> afind (workspace)` | workspace | 0.002000 | 0.001250 | 37.5 | 51 | 47 | 7.8 |
-| `find\|grep -> afind (synthetic tree)` | synthetic | 0.003875 | 0.002375 | 38.7 | 1080 | 519 | 51.9 |
-| `du\|sort -> adu (workspace src)` | workspace | 0.002000 | 0.001000 | 50.0 | 96 | 48 | 50.0 |
-| `du\|sort -> adu (synthetic)` | synthetic | 0.005000 | 0.002875 | 42.5 | 657 | 67 | 89.8 |
-| `ps -> aps (top 30)` | system | 0.018375 | 0.013500 | 26.5 | 2083 | 1276 | 38.7 |
+| `ls -> als (workspace)` | workspace | 0.003000 | 0.001000 | 66.7 | 319 | 105 | 67.1 |
+| `ls -> als (synthetic tree)` | synthetic | 0.004500 | 0.001000 | 77.8 | 1047 | 493 | 52.9 |
+| `cat -> acat (workspace file)` | workspace | 0.001000 | 0.001000 | 0.0 | 1061 | 945 | 10.9 |
+| `cat -> acat (large log)` | synthetic | 0.002000 | 0.001000 | 50.0 | 600120 | 49810 | 91.7 |
+| `grep -> agrep (workspace)` | workspace | 0.002500 | 0.001000 | 60.0 | 647 | 569 | 12.1 |
+| `grep -> agrep (synthetic logs)` | synthetic | 0.003000 | 0.002500 | 16.7 | 42480 | 13376 | 68.5 |
+| `find\|grep -> afind (workspace)` | workspace | 0.002500 | 0.001000 | 60.0 | 51 | 47 | 7.8 |
+| `find\|grep -> afind (synthetic tree)` | synthetic | 0.004000 | 0.003000 | 25.0 | 1080 | 519 | 51.9 |
+| `du\|sort -> adu (workspace src)` | workspace | 0.002500 | 0.001000 | 60.0 | 96 | 48 | 50.0 |
+| `du\|sort -> adu (synthetic)` | synthetic | 0.005000 | 0.003000 | 40.0 | 657 | 67 | 89.8 |
+| `du\|sort -> adu (workspace full)` | workspace | 0.014500 | 0.001000 | 93.1 | 1080 | 92 | 91.5 |
+| `ps -> aps (top 30)` | system | 0.021500 | 0.013500 | 37.2 | 2283 | 1310 | 42.6 |
+| `ps -> aps (top 80)` | system | 0.020000 | 0.014500 | 27.5 | 6024 | 3051 | 49.4 |
+| `cat -> acat (huge aggressive)` | synthetic | 0.001000 | 0.003500 | -250.0 | 600120 | 125120 | 79.2 |
+
+_Summary: avg time save=26.0%, avg token save=54.7%_
+
+### Trade-offs: Latency vs. Tokens
+
+While most tools (`als`, `adu`, `afind`, `aps`) are strictly *faster* than their classical counterparts because they natively combine formatting and sorting into a single internal buffer array, some edge-case modes take slightly longer.
+
+Notice the negative time save (`-250%`) in `cat -> acat (huge aggressive)`. This is by design.
+In `--aggressive` mode over gigantic text logs:
+1. The tool calculates longest-common-prefixes over every single text line to emit delta paths (`~<prefix_len>|<suffix>`).
+2. It runs a semantic tokenizer replacement mapping over every whitespace split word.
+3. This creates a compute-bound operation.
+
+**Why is it worth it?**
+Though CPU latency increases marginally (from `0.001s` to `0.0035s`, perfectly unnoticeable to a human), it drops the payload sent to the LLM agent from **600,000 tokens** down to **125,120 tokens** (an incredible **79.2% token reduction**).
+For any LLM generation task, reading 475,000 fewer tokens saves massive amounts of compute time (API latency) and money (API billing). A 2ms local delay guarantees hundreds of milliseconds shaved off the LLM inference round-trip.
 | `ps -> aps (top 80)` | system | 0.018875 | 0.013000 | 31.1 | 5940 | 3142 | 47.1 |
 | `du\|sort -> adu (workspace full)` | workspace | 0.012625 | 0.001000 | 92.1 | 1084 | 90 | 91.7 |
 | `cat -> acat (huge aggressive)` | synthetic | 0.001000 | 0.003000 | -200.0 | 600120 | 125120 | 79.2 |

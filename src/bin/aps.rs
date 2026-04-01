@@ -1,5 +1,6 @@
 use std::env;
 use std::fs;
+use std::io::{self, BufWriter, Write};
 
 use ai_linux_tools::{TextPacker, compact_text_for_ai, to_base36, truncate_for_ai};
 
@@ -106,16 +107,20 @@ fn main() {
     }
 
     rows.sort_by(|a, b| b.rss_kb.cmp(&a.rss_kb));
+    let stdout = io::stdout();
+    let mut out = BufWriter::new(stdout.lock());
     let mut text_packer = TextPacker::default();
+
     if pack {
-        println!("@ap2\taps\tfields=p36,pp36,st,r36,n,cmdp");
+        writeln!(out, "@ap2\taps\tfields=p36,pp36,st,r36,n,cmdp").unwrap();
     }
     for row in rows.into_iter().take(max_results) {
         let cmd = row.cmd.replace('\t', " ");
         if pack {
             let compact_cmd = truncate_for_ai(&compact_text_for_ai(&cmd), 160);
             let packed_cmd = text_packer.pack(&compact_cmd);
-            println!(
+            writeln!(
+                out,
                 "{}\t{}\t{}\t{}\t{}\t{}",
                 to_base36(row.pid as u64),
                 to_base36(row.ppid as u64),
@@ -123,12 +128,14 @@ fn main() {
                 to_base36(row.rss_kb),
                 row.name,
                 packed_cmd
-            );
+            ).unwrap();
         } else {
-            println!(
+            writeln!(
+                out,
                 "{}\t{}\t{}\t{}\t{}\t{}",
                 row.pid, row.ppid, row.state, row.rss_kb, row.name, cmd
-            );
+            ).unwrap();
         }
     }
+    out.flush().unwrap();
 }

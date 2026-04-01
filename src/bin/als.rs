@@ -1,5 +1,6 @@
 use std::env;
 use std::fs;
+use std::io::{self, BufWriter, Write};
 use std::path::PathBuf;
 use std::time::UNIX_EPOCH;
 
@@ -83,21 +84,26 @@ fn main() {
         _ => a.name.cmp(&b.name),
     });
 
+    let stdout = io::stdout();
+    let mut out = BufWriter::new(stdout.lock());
+
     if pack {
-        println!("@ap1\tals\tfields=k,s36,t36,n");
+        writeln!(out, "@ap1\tals\tfields=k,s36,t36,n").unwrap();
     }
 
     for e in entries {
         if pack {
-            println!(
+            writeln!(
+                out,
                 "{}\t{}\t{}\t{}",
                 e.kind,
                 to_base36(e.size),
                 to_base36(e.mtime),
                 e.name
-            );
+            ).unwrap();
         } else {
-            println!("{}\t{}\t{}\t{}", e.kind, e.size, e.mtime, e.name);
+            writeln!(out, "{}\t{}\t{}\t{}", e.kind, e.size, e.mtime, e.name).unwrap();
         }
     }
+    out.flush().unwrap();
 }

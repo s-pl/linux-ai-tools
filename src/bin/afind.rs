@@ -1,5 +1,6 @@
 use std::env;
 use std::fs;
+use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
 
 use ai_linux_tools::{PathPacker, is_hidden, skip_heavy_dir};
@@ -133,16 +134,20 @@ fn main() {
     );
 
     results.sort();
+    let stdout = io::stdout();
+    let mut out = BufWriter::new(stdout.lock());
+
     if pack {
         let mut path_packer = PathPacker::default();
         let root_prefix = format!("{}/", root.display());
         for path in results.into_iter().take(max_results) {
             let rel = path.strip_prefix(&root_prefix).unwrap_or(&path).to_string();
-            println!("{}", path_packer.pack(&rel));
+            writeln!(out, "{}", path_packer.pack(&rel)).unwrap();
         }
     } else {
         for path in results.into_iter().take(max_results) {
-            println!("{}", path);
+            writeln!(out, "{}", path).unwrap();
         }
     }
+    out.flush().unwrap();
 }
