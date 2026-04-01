@@ -217,9 +217,6 @@ In `--aggressive` mode over gigantic text logs:
 **Why is it worth it?**
 Though CPU latency increases marginally (from `0.001s` to `0.0035s`, perfectly unnoticeable to a human), it drops the payload sent to the LLM agent from **600,000 tokens** down to **125,120 tokens** (an incredible **79.2% token reduction**).
 For any LLM generation task, reading 475,000 fewer tokens saves massive amounts of compute time (API latency) and money (API billing). A 2ms local delay guarantees hundreds of milliseconds shaved off the LLM inference round-trip.
-| `ps -> aps (top 80)` | system | 0.018875 | 0.013000 | 31.1 | 5940 | 3142 | 47.1 |
-| `du\|sort -> adu (workspace full)` | workspace | 0.012625 | 0.001000 | 92.1 | 1084 | 90 | 91.7 |
-| `cat -> acat (huge aggressive)` | synthetic | 0.001000 | 0.003000 | -200.0 | 600120 | 125120 | 79.2 |
 
 Notes:
 
