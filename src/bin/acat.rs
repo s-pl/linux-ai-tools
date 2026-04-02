@@ -41,7 +41,8 @@ fn main() {
     let mut out = BufWriter::new(stdout.lock());
 
     let mut text_packer = TextPacker::default();
-    let use_delta_text = aggressive && max_lines <= 1500;
+    // Delta text packing requires only the previous line in memory — no line-count constraint.
+    let use_delta_text = aggressive;
     if pack {
         let _ = writeln!(out, "@ap2\tacat\tfields=txtp");
     }

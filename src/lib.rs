@@ -149,33 +149,33 @@ pub fn compact_text_light(input: &str) -> String {
 
 fn compact_large_numbers(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
-    let mut i = 0usize;
-    let bytes = input.as_bytes();
-    while i < bytes.len() {
-        if bytes[i].is_ascii_digit() {
-            let start = i;
-            while i < bytes.len() && bytes[i].is_ascii_digit() {
-                i += 1;
+    let mut chars = input.char_indices().peekable();
+    while let Some((start, ch)) = chars.next() {
+        if ch.is_ascii_digit() {
+            // Collect the full run of ASCII digits.
+            let mut end = start + 1;
+            while let Some(&(j, c)) = chars.peek() {
+                if c.is_ascii_digit() {
+                    end = j + 1;
+                    chars.next();
+                } else {
+                    break;
+                }
             }
-            let num_str = &input[start..i];
+            let num_str = &input[start..end];
             if num_str.len() >= 4 {
                 if let Ok(v) = num_str.parse::<u64>() {
                     let encoded = to_base36(v);
                     if encoded.len() + 1 < num_str.len() {
                         out.push('#');
                         out.push_str(&encoded);
-                    } else {
-                        out.push_str(num_str);
+                        continue;
                     }
-                } else {
-                    out.push_str(num_str);
                 }
-            } else {
-                out.push_str(num_str);
             }
+            out.push_str(num_str);
         } else {
-            out.push(bytes[i] as char);
-            i += 1;
+            out.push(ch);
         }
     }
     out

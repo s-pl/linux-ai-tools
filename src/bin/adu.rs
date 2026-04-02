@@ -15,12 +15,16 @@ fn dir_size(path: &Path, include_hidden: bool) -> u64 {
         if !include_hidden && is_hidden(&p) {
             continue;
         }
-        let Ok(md) = entry.metadata() else {
+        // file_type() reads d_type from dirent — no fstatat syscall.
+        let Ok(ft) = entry.file_type() else {
             continue;
         };
-        if md.is_file() {
-            total = total.saturating_add(md.len());
-        } else if md.is_dir() {
+        if ft.is_file() {
+            // metadata() is only called when we actually need the file size.
+            if let Ok(md) = entry.metadata() {
+                total = total.saturating_add(md.len());
+            }
+        } else if ft.is_dir() {
             if skip_heavy_dir(&p) {
                 continue;
             }
@@ -61,16 +65,15 @@ fn main() {
         if !include_hidden && is_hidden(&path) {
             continue;
         }
-        let Ok(md) = entry.metadata() else {
+        let Ok(ft) = entry.file_type() else {
             continue;
         };
-
-        let size = if md.is_file() {
-            md.len()
-        } else if md.is_dir() {
-            if skip_heavy_dir(&path) {
-                continue;
-            }
+        if ft.is_dir() && skip_heavy_dir(&path) {
+            continue;
+        }
+        let size = if ft.is_file() {
+            entry.metadata().map(|m| m.len()).unwrap_or(0)
+        } else if ft.is_dir() {
             dir_size(&path, include_hidden)
         } else {
             0

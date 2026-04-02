@@ -14,20 +14,26 @@ struct Entry {
     mtime: u64,
 }
 
-fn parse_args() -> (PathBuf, bool, bool) {
+fn parse_args() -> (PathBuf, bool, bool, usize) {
     let mut path = PathBuf::from(".");
     let mut all = false;
     let mut pack = false;
-    for arg in env::args().skip(1) {
-        if arg == "-a" || arg == "--all" {
-            all = true;
-        } else if arg == "--pack" {
-            pack = true;
-        } else {
-            path = PathBuf::from(arg);
+    let mut max_results: usize = usize::MAX;
+
+    let mut args = env::args().skip(1);
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "-a" | "--all" => all = true,
+            "--pack" => pack = true,
+            "--max" => {
+                if let Some(v) = args.next() {
+                    max_results = v.parse().unwrap_or(usize::MAX);
+                }
+            }
+            _ => path = PathBuf::from(&arg),
         }
     }
-    (path, all, pack)
+    (path, all, pack, max_results)
 }
 
 fn kind_from_metadata(md: &fs::Metadata) -> char {
@@ -44,7 +50,7 @@ fn kind_from_metadata(md: &fs::Metadata) -> char {
 }
 
 fn main() {
-    let (path, all, pack) = parse_args();
+    let (path, all, pack, max_results) = parse_args();
     let read_dir = match fs::read_dir(&path) {
         Ok(v) => v,
         Err(err) => {
@@ -91,7 +97,7 @@ fn main() {
         writeln!(out, "@ap1\tals\tfields=k,s36,t36,n").unwrap();
     }
 
-    for e in entries {
+    for e in entries.into_iter().take(max_results) {
         if pack {
             writeln!(
                 out,

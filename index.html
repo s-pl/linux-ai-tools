@@ -177,7 +177,7 @@
     <!-- ─── 2. ECONOMICS ───────────────────────────────────────────────── -->
     <section id="economics">
         <h2>2. Economics of LLM Context Windows</h2>
-        <p>The computational cost of Transformer attention scales quadratically with sequence length <em>N</em>. The total inference cost for an agent issuing <em>Q</em> sequential tool calls is:</p>
+        <p>The computational cost of Transformer attention scales quadratically with sequence length <em>N</em> [1]. The total inference cost for an agent issuing <em>Q</em> sequential tool calls is:</p>
 
         <div class="math-block">
             \[ C_{\text{total}} = \sum_{i=1}^{Q} \Bigl( c_{\text{in}} \cdot T_{\text{in}}(q_i) + c_{\text{out}} \cdot T_{\text{out}}(q_i) + O\!\left(T_{\text{in}}^2\right) \Bigr) \]
@@ -191,7 +191,7 @@
     <!-- ─── 3. ARCHITECTURE ────────────────────────────────────────────── -->
     <section id="architecture">
         <h2>3. System Architecture &amp; I/O Model</h2>
-        <p>Classical pipelines like <code>find . | grep "src"</code> spawn two processes and rely on inter-process communication through a kernel pipe. The expected wall-clock time per record is:</p>
+        <p>Classical pipelines like <code>find . | grep "src"</code> spawn two processes and rely on inter-process communication through a kernel pipe [10]. The expected wall-clock time per record is:</p>
 
         <div class="math-block">
             \[ E[T_{\text{posix}}] = T_{\text{user}} + N \cdot (T_{\text{syscall\_read}} + T_{\text{ipc}} + T_{\text{syscall\_write}}) \]
@@ -204,12 +204,12 @@
         </div>
 
         <h3>3.1 Directory Traversal: <code>d_type</code> vs <code>fstatat</code></h3>
-        <p>The POSIX <code>readdir</code> interface returns a <code>dirent</code> struct containing a <code>d_type</code> field that encodes the entry's file type. On Linux with <code>ext4</code>, <code>btrfs</code>, and most modern filesystems, this field is populated at no extra cost during the <code>getdents64</code> call.</p>
+        <p>The POSIX <code>readdir</code> interface returns a <code>dirent</code> struct containing a <code>d_type</code> field that encodes the entry's file type [9]. On Linux with <code>ext4</code>, <code>btrfs</code>, and most modern filesystems, this field is populated at no extra cost during the <code>getdents64</code> call.</p>
 
         <p>In contrast, retrieving the same type information via <code>stat(2)</code> or <code>fstatat(2)</code> issues a separate kernel round-trip per directory entry. Both <code>agrep</code> and <code>afind</code> use <code>entry.file_type()</code> (reading <code>d_type</code> directly) rather than <code>entry.metadata()</code>, eliminating one syscall per entry. On a source tree with thousands of entries, this accounts for a significant fraction of total syscall overhead in directory traversal.</p>
 
         <h3>3.2 SIMD Pattern Matching in <code>agrep</code></h3>
-        <p>Rust's standard <code>str::contains</code> uses the Two-Way algorithm (O(n) time, O(1) space) but does not leverage SIMD registers. <code>agrep</code> uses <code>memchr::memmem::Finder</code>, which selects the optimal search strategy at runtime based on CPU capability: AVX2 (32 bytes/cycle on x86-64 with AVX2), SSE2 (16 bytes/cycle), or a SIMD-within-a-register fallback on other architectures. A <code>Finder</code> instance is constructed once per invocation (amortising the preprocessing cost) and reused across every file in the traversal. A 64 KB <code>BufReader</code> reduces <code>read(2)</code> system calls for large files by up to 8× compared to the default 8 KB buffer.</p>
+        <p>Rust's standard <code>str::contains</code> uses the Two-Way algorithm [7] (O(n) time, O(1) space) but does not leverage SIMD registers. <code>agrep</code> uses <code>memchr::memmem::Finder</code> [6], which selects the optimal search strategy at runtime based on CPU capability: AVX2 (32 bytes/cycle on x86-64 with AVX2), SSE2 (16 bytes/cycle), or a SIMD-within-a-register fallback on other architectures. A <code>Finder</code> instance is constructed once per invocation (amortising the preprocessing cost) and reused across every file in the traversal. A 64 KB <code>BufReader</code> reduces <code>read(2)</code> system calls for large files by up to 8× compared to the default 8 KB buffer.</p>
     </section>
 
     <!-- ─── 4. TRANSFORMS ─────────────────────────────────────────────── -->
@@ -459,7 +459,7 @@
     <!-- ─── 9. RELATED WORK ───────────────────────────────────────────── -->
     <section id="related-work">
         <h2>9. Related Work</h2>
-        <p>This work intersects efficient tokenisation for language models, compact intermediate representations for systems data, and modern command-line ergonomics. <em>ripgrep</em> (BurntSushi, 2016) demonstrates that reimplementing <code>grep</code> in Rust with SIMD-accelerated search and intelligent directory filtering achieves order-of-magnitude speed improvements over GNU grep on large codebases; <code>agrep</code> borrows the same <code>memchr::memmem</code> substrate. The distinction between byte-level and token-level compression has not, to the authors' knowledge, been systematically examined for CLI tool output designed for LLM consumption; the BPE incompatibility observation in §4.4 is original to this work.</p>
+        <p>This work intersects efficient tokenisation for language models, compact intermediate representations for systems data, and modern command-line ergonomics. <em>ripgrep</em> [5] demonstrates that reimplementing <code>grep</code> in Rust with SIMD-accelerated search and intelligent directory filtering achieves order-of-magnitude speed improvements over GNU grep on large codebases; <code>agrep</code> borrows the same <code>memchr::memmem</code> substrate [6]. The Byte Pair Encoding scheme underlying cl100k_base originates in data compression [4] and was adapted for NLP subword tokenization by Sennrich et al. [2]; the large-language-model context window as a computational bottleneck is formalised in Brown et al. [3]. The distinction between byte-level and token-level compression has not, to the authors' knowledge, been systematically examined for CLI tool output designed for LLM consumption; the BPE incompatibility observation in §4.4 is original to this work.</p>
     </section>
 
     <!-- ─── 10. CONCLUSION ────────────────────────────────────────────── -->
@@ -482,13 +482,25 @@
     <section id="references">
         <h2>References</h2>
         <ol>
-            <li>Vaswani, A. et al. (2017). <em>Attention Is All You Need.</em> NeurIPS.</li>
-            <li>Kudo, T., Richardson, J. (2018). <em>SentencePiece: A simple and language-independent subword tokenizer.</em> EMNLP.</li>
-            <li>BurntSushi. <em>ripgrep — line-oriented search tool.</em> Design notes and benchmarks, 2016–present.</li>
-            <li>Gallant, S. I. (1992). <em>Two-way string matching.</em> JACM, 39(3).</li>
-            <li>The Rust Project. <em>std::io::BufWriter</em> documentation. The Rust Standard Library.</li>
-            <li>OpenAI. <em>Tokenisation and BPE encoding in cl100k_base.</em> Engineering notes, 2023.</li>
-            <li><em>memchr</em> crate. A. Gallant et al. Crates.io, 2023. SIMD-accelerated byte and substring search.</li>
+            <li>Vaswani, A., Shazeer, N., Parmar, N., Uszkoreit, J., Jones, L., Gomez, A. N., Kaiser, Ł., &amp; Polosukhin, I. (2017). <em>Attention Is All You Need.</em> Advances in Neural Information Processing Systems 30 (NeurIPS 2017). <a href="https://arxiv.org/abs/1706.03762">arXiv:1706.03762</a>. [Establishes the quadratic attention cost with respect to sequence length, motivating token-count minimisation]</li>
+
+            <li>Sennrich, R., Haddow, B., &amp; Birch, A. (2016). <em>Neural Machine Translation of Rare Words with Subword Units.</em> Proceedings of the 54th Annual Meeting of the Association for Computational Linguistics (ACL 2016). <a href="https://arxiv.org/abs/1508.07909">arXiv:1508.07909</a>. [Adapts Byte Pair Encoding from data compression to NLP; the foundation of modern LLM tokenizers including cl100k_base]</li>
+
+            <li>Brown, T., Mann, B., Ryder, N., et al. (2020). <em>Language Models are Few-Shot Learners.</em> Advances in Neural Information Processing Systems 33 (NeurIPS 2020). <a href="https://arxiv.org/abs/2005.14165">arXiv:2005.14165</a>. [GPT-3; establishes the context window as the primary working-memory resource in large language model inference and motivates efficient context packing]</li>
+
+            <li>Gage, P. (1994). <em>A new algorithm for data compression.</em> C Users Journal, 12(2), 23–38. [Original description of Byte Pair Encoding as a lossless compression algorithm, later adapted by Sennrich et al. for subword tokenization]</li>
+
+            <li>Gallant, A. (2016–present). <em>ripgrep: line-oriented search tool that recursively searches directories.</em> GitHub: <a href="https://github.com/BurntSushi/ripgrep">BurntSushi/ripgrep</a>. [First major demonstration of a Rust-native grep reimplementation achieving order-of-magnitude speed improvements over GNU grep via SIMD search and intelligent directory filtering; <code>agrep</code> shares its search substrate]</li>
+
+            <li>Gallant, A. (2015–present). <em>memchr: Heavily optimized routines for string searching.</em> Rust crate, v2.x. <a href="https://crates.io/crates/memchr">crates.io/crates/memchr</a>. [SIMD-accelerated substring search via AVX2 (32 bytes/cycle), SSE2 (16 bytes/cycle), and a SWAR fallback; the <code>memmem::Finder</code> primitive used in <code>agrep</code>]</li>
+
+            <li>Crochemore, M., &amp; Rytter, W. (1991). <em>Two-way string-matching.</em> Journal of the ACM, 38(3), 650–674. <a href="https://doi.org/10.1145/116825.116845">doi:10.1145/116825.116845</a>. [Describes the Two-Way string matching algorithm (O(n) time, O(1) space) used in Rust's <code>std::str::contains</code>; does not exploit SIMD registers, motivating the switch to <code>memmem::Finder</code>]</li>
+
+            <li>OpenAI. (2023). <em>tiktoken: Fast BPE tokenizer for OpenAI models.</em> GitHub: <a href="https://github.com/openai/tiktoken">openai/tiktoken</a>. [Implements the <code>cl100k_base</code> vocabulary (100,277 tokens) used throughout this work for exact BPE token counting; the Rust binding is provided by the <code>tiktoken-rs</code> crate]</li>
+
+            <li>Linux man-pages project. <em>getdents64(2) — get directory entries.</em> Linux Programmer's Manual. <a href="https://man7.org/linux/man-pages/man2/getdents64.2.html">man7.org/linux/man-pages/man2/getdents64.2.html</a>. [The <code>d_type</code> field in <code>struct linux_dirent64</code> encodes the file type within the <code>getdents64</code> result, allowing <code>entry.file_type()</code> to return the type without an additional <code>fstatat(2)</code> system call on <code>ext4</code>, <code>btrfs</code>, and <code>tmpfs</code>]</li>
+
+            <li>The Rust Project. <em>std::io::BufWriter</em> — The Rust Standard Library. <a href="https://doc.rust-lang.org/std/io/struct.BufWriter.html">doc.rust-lang.org/std/io/struct.BufWriter.html</a>. [Wraps any writer and amortises <code>write(2)</code> syscalls over a configurable in-memory buffer; all tools in this suite use a locked <code>BufWriter&lt;StdoutLock&gt;</code> for maximum throughput]</li>
         </ol>
     </section>
 </body>
