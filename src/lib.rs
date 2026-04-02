@@ -106,46 +106,27 @@ pub fn compact_text_for_ai(input: &str) -> String {
 }
 
 fn mapped_token(token: &str) -> Option<&'static str> {
-    if token.eq_ignore_ascii_case("function") {
-        Some("fn")
-    } else if token.eq_ignore_ascii_case("directory") {
-        Some("dir")
-    } else if token.eq_ignore_ascii_case("process") {
-        Some("proc")
-    } else if token.eq_ignore_ascii_case("application") {
-        Some("app")
-    } else if token.eq_ignore_ascii_case("command") {
-        Some("cmd")
-    } else if token.eq_ignore_ascii_case("argument") {
-        Some("arg")
-    } else if token.eq_ignore_ascii_case("variable") {
-        Some("var")
-    } else if token.eq_ignore_ascii_case("string") {
-        Some("str")
-    } else if token.eq_ignore_ascii_case("javascript") {
-        Some("js")
-    } else if token.eq_ignore_ascii_case("typescript") {
-        Some("ts")
-    } else if token.eq_ignore_ascii_case("python") {
-        Some("py")
-    } else if token.eq_ignore_ascii_case("return") {
-        Some("ret")
-    } else if token.eq_ignore_ascii_case("error") {
-        Some("err")
-    } else if token.eq_ignore_ascii_case("warning") {
-        Some("warn")
-    } else if token.eq_ignore_ascii_case("information") {
-        Some("info")
-    } else if token.eq_ignore_ascii_case("configuration") {
-        Some("cfg")
-    } else if token.eq_ignore_ascii_case("parameter") {
-        Some("param")
-    } else if token.eq_ignore_ascii_case("message") {
-        Some("msg")
-    } else if token.eq_ignore_ascii_case("response") {
-        Some("resp")
-    } else {
-        None
+    match token.to_ascii_lowercase().as_str() {
+        "function" => Some("fn"),
+        "directory" => Some("dir"),
+        "process" => Some("proc"),
+        "application" => Some("app"),
+        "command" => Some("cmd"),
+        "argument" => Some("arg"),
+        "variable" => Some("var"),
+        "string" => Some("str"),
+        "javascript" => Some("js"),
+        "typescript" => Some("ts"),
+        "python" => Some("py"),
+        "return" => Some("ret"),
+        "error" => Some("err"),
+        "warning" => Some("warn"),
+        "information" => Some("info"),
+        "configuration" => Some("cfg"),
+        "parameter" => Some("param"),
+        "message" => Some("msg"),
+        "response" => Some("resp"),
+        _ => None,
     }
 }
 
@@ -161,11 +142,7 @@ pub fn compact_text_light(input: &str) -> String {
             continue;
         }
         prev_space = false;
-        if ch == '\t' {
-            out.push(' ');
-        } else {
-            out.push(ch);
-        }
+        out.push(ch);
     }
     out
 }
@@ -274,8 +251,7 @@ impl TextPacker {
         } else {
             text.to_string()
         };
-        self.prev.clear();
-        self.prev.push_str(text);
+        self.prev = text.to_owned();
         out
     }
 }
@@ -320,34 +296,8 @@ impl PathUnpacker {
     }
 }
 
-// TextUnpacker is functionally identical but kept for parity.
-#[derive(Default)]
-pub struct TextUnpacker {
-    prev: String,
-}
-
-impl TextUnpacker {
-    pub fn unpack(&mut self, packed: &str) -> String {
-        let out = if packed.starts_with('~') {
-            if let Some(idx) = packed.find('|') {
-                let prefix_len = from_base36(&packed[1..idx]) as usize;
-                let suffix = &packed[idx + 1..];
-                if prefix_len <= self.prev.len() {
-                    format!("{}{}", &self.prev[..prefix_len], suffix)
-                } else {
-                    packed.to_string()
-                }
-            } else {
-                packed.to_string()
-            }
-        } else {
-            packed.to_string()
-        };
-        self.prev.clear();
-        self.prev.push_str(&out);
-        out
-    }
-}
+// TextUnpacker is identical to PathUnpacker; kept as a type alias for semantic clarity.
+pub type TextUnpacker = PathUnpacker;
 
 pub fn expand_text_for_ai(input: &str) -> String {
     let mut out = String::with_capacity(input.len());

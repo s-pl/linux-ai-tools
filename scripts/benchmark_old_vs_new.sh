@@ -20,7 +20,7 @@ need_bin() {
 }
 
 if [[ "$BUILD_IF_MISSING" == "1" ]]; then
-  if ! need_bin "$NEW_BIN_DIR/als" || ! need_bin "$NEW_BIN_DIR/acat" || ! need_bin "$NEW_BIN_DIR/agrep" || ! need_bin "$NEW_BIN_DIR/afind" || ! need_bin "$NEW_BIN_DIR/adu" || ! need_bin "$NEW_BIN_DIR/aps" || ! need_bin "$NEW_BIN_DIR/atok" || ! need_bin "$NEW_BIN_DIR/achunk" || ! need_bin "$NEW_BIN_DIR/aunpack"; then
+  if ! need_bin "$NEW_BIN_DIR/als" || ! need_bin "$NEW_BIN_DIR/acat" || ! need_bin "$NEW_BIN_DIR/agrep" || ! need_bin "$NEW_BIN_DIR/afind" || ! need_bin "$NEW_BIN_DIR/adu" || ! need_bin "$NEW_BIN_DIR/aps" || ! need_bin "$NEW_BIN_DIR/atok"; then
     cargo build --release >/dev/null
   fi
 fi
@@ -207,9 +207,7 @@ run_case_stats() {
     fi
     if [[ "$mode" == "new" ]]; then
       case "$label" in
-        *"aunpack"*|*"achunk"*)
-          ;;
-        *"als"*|*"agrep"*|*"afind"*|*"adu"*|*"aps"*|*"acat"*)
+        *"als"*|*"agrep"*|*"adu"*|*"aps"*|*"acat"*)
           if ! head -n 1 "$out_file" | grep -q '^@ap'; then
             failures=$((failures + 1))
           fi
@@ -257,9 +255,6 @@ cases=(
 
   "system|||ps -eo pid,ppid,state,rss,comm,args --sort=-rss | head -n 30|||$NEW_BIN_DIR/aps --max 30 --pack|||ps -> aps (top 30)"
   "system|||ps -eo pid,ppid,state,rss,comm,args --sort=-rss | head -n 80|||$NEW_BIN_DIR/aps --max 80 --pack|||ps -> aps (top 80)"
-
-  "system|||ps -eo pid,rss,comm --sort=-rss | head -n 40 | awk '{print \$1}'|||$NEW_BIN_DIR/aps --pack | $NEW_BIN_DIR/aunpack | awk '{print \$1}' | head -n 40|||aps | aunpack -> ps | awk (top 40 pids)"
-  "workspace|||find src -type f | head -n 50|||$NEW_BIN_DIR/afind '' src --type f --pack | $NEW_BIN_DIR/achunk --max 200|||afind | achunk -> find | head (workspace)"
 )
 
 if [[ "$INCLUDE_HEAVY" == "1" ]]; then

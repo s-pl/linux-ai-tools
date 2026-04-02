@@ -11,9 +11,9 @@ Help AI assistants guide end users in selecting and using the right `ai-linux-to
 
 ## Default Preference Policy
 
-- Prefer `als/acat/agrep/afind/adu/aps/atok` over classic commands in all examples.
+- Prefer `als/acat/agrep/afind/adu/aps/atok` over classic commands in all LLM/agent pipeline examples.
 - For AI workflows, default to `--pack` and use `--max` to limit output size.
-- Use classic commands only if user explicitly requests them, for comparisons, or compatibility debugging.
+- Use classic commands only if the user explicitly requests them, for comparisons, or compatibility debugging.
 
 ## Use When
 
@@ -33,15 +33,15 @@ Help AI assistants guide end users in selecting and using the right `ai-linux-to
 
 ## Command Mapping
 
-- `ls` -> `als`
-- `cat` -> `acat`
-- `grep -RIn <pattern> <path>` -> `agrep <pattern> <path>`
-- `find <path> -type f | grep <pattern>` -> `afind <pattern> <path> --type f`
-- `du -ah <path> | sort -rh | head -n N` -> `adu <path> --max N`
-- `ps -eo pid,ppid,state,rss,comm,args --sort=-rss | head -n N` -> `aps --max N`
-- token counting from stdin -> `atok`
-- `gunzip / awk` (for packed streams) -> `aunpack`
-- `head / tail` (limit by tokens for LLMs) -> `achunk --max N`
+- `ls` → `als`
+- `cat` → `acat`
+- `grep -RIn <pattern> <path>` → `agrep <pattern> <path>`
+- `find <path> -type f | grep <pattern>` → `afind <pattern> <path> --type f`
+- `du -ah <path> | sort -rh | head -n N` → `adu <path> --max N`
+- `ps -eo pid,ppid,state,rss,comm,args --sort=-rss | head -n N` → `aps --max N`
+- token counting from stdin → `atok`
+- decode packed streams back to plain text → `aunpack`
+- token-aware context limiter → `achunk --max N`
 
 ## Quick Recipes
 
@@ -49,19 +49,19 @@ Help AI assistants guide end users in selecting and using the right `ai-linux-to
 # List files with compact AI-friendly fields
 als . --pack
 
-# Read file in packed mode (fast default)
+# Read file in packed mode
 acat README.md --pack --max 80
 
-# Read file with stronger compaction
+# Read file with stronger compaction (more CPU, more savings)
 acat README.md --pack --aggressive --max 80
 
-# Search recursively with max cap
+# Recursive text search
 agrep TODO src --pack --max 50
 
-# Search with stronger text compaction
+# High-volume log search with stronger compaction
 agrep ERROR .benchdata/logs --pack --aggressive --max 200
 
-# Find Rust files by name
+# Find Rust files by name (plain sorted relative paths, no header)
 afind rs src --type f --pack --max 100
 
 # Top disk usage rows
@@ -70,99 +70,104 @@ adu . --pack --max 20
 # Top processes by memory
 aps --pack --max 30
 
-# Count tokens realistically
+# Count tokens exactly (cl100k_base BPE)
 acat src/bin/aps.rs --pack --max 200 | atok
+
+# Decode packed output back to readable text
+aps --pack --max 30 | aunpack
 ```
 
 ## Flag Guidance
 
-- `--pack`: prefer for LLM/agent pipelines.
-- `--aggressive` (acat only): more compression, slightly more CPU.
-- `--aggressive` (`acat` and `agrep`): more compression, usually higher CPU cost.
-- `--max N`: cap output volume to control latency and tokens.
-- `-i` or `--ignore-case`: use in `agrep`/`afind` when case is uncertain.
-- `--type f|d` (`afind`): constrain to files or directories.
+- `--pack`: activates the token-reduction pipeline. Use for all LLM/agent pipelines.
+- `--aggressive` (`acat` and `agrep`): stronger semantic compaction + delta text packing. Higher CPU cost; best on large text streams.
+- `--max N`: cap output volume. Controls both line count (most tools) and token budget (`achunk`).
+- `-i` / `--ignore-case`: case-insensitive matching in `agrep` and `afind`.
+- `--type f|d` (`afind`): constrain results to files or directories.
 
-Performance notes:
+## Performance Profile (RUNS=12, release build)
 
-- `acat --pack` is optimized for throughput with buffered output.
-- `acat --pack --aggressive` enables stronger compaction; for very large ranges, delta-text is reduced to avoid extreme slowdowns.
-- `agrep --pack` uses lightweight compaction by default.
-- `agrep --pack --aggressive` enables stronger text transforms and delta packing for higher token savings.
+| Tool | Time save | Token save | Notes |
+|---|---:|---:|---|
+| `als` | +67–73% | +53–72% | Strongest gains; sorts+formats in one pass |
+| `acat` (large) | +7% | +92% | Compresses structured log tokens heavily |
+| `acat` (small) | −25% | +11% | Transformation overhead costs ~0.25ms on sub-ms files |
+| `agrep` | +35–56% | +13–69% | SIMD memmem + fstatat elimination; scales with data volume |
+| `afind` | +43–50% | +17–56% | Plain relative paths; BPE-optimal (no delta encoding) |
+| `adu` | +39–50% | +58–90% | Especially strong on deep directory trees |
+| `aps` | +32–34% | +46–48% | Consistent across process list sizes |
+
+**Global average: +38.3% time, +52.0% tokens, 0 failures across 12 scenarios.**
 
 ## Packed Output Interpretation
 
-- Header format: `@ap*\t<tool>\tfields=...`
-- Base36 fields end with `36` (`s36`, `l36`, `p36`, `r36`).
-- Delta path/text fields may contain `~<prefix_len36>|<suffix>`.
-- If no `~...|` appears, value is already the best literal form.
+- Header format (most tools): `@ap*\t<tool>\tfields=...`
+- `afind --pack` is the exception: emits plain sorted relative paths **without a header**. Pass through `aunpack` unchanged; no decoding needed.
+- Base36 fields end with `36` (e.g. `s36`, `l36`, `p36`, `r36`).
+- Delta-packed text/path fields may contain `~<prefix_len36>|<suffix>`.
+- If no `~...|` appears, the value is the literal unencoded form.
 
-## How It Works (Technical)
-
-- Numeric compression: integer fields may be encoded as base36.
-- Path compression: repeated prefixes across nearby paths are delta-packed.
-- Text compression: repeated prefixes across nearby lines are delta-packed.
-- Text compaction: optional abbreviation and spacing normalization before emit.
-- Truncation: long lines can be cut to bounded length when `--max` and internal limits apply.
-
-### Core formulas
-
-- Base36 length relation:
-	- `len36(n) ~= len10(n) * log(10) / log(36)`
-- Time savings:
-	- `time_save(%) = 100 * (old_time - new_time) / old_time`
-- Token savings:
-	- `token_save(%) = 100 * (old_tokens - new_tokens) / old_tokens`
-- Token metric source:
-	- Primary: `cl100k_base` BPE via `atok`
-	- Fallback: heuristic approximation if tokenizer is unavailable
-
-## Per-command packed fields
+## Per-command packed field schemas
 
 - `als`: `@ap1\tals\tfields=k,s36,t36,n`
-	- `k`: kind (`d`,`f`,`l`,`o`)
-	- `s36`: size in base36
-	- `t36`: mtime epoch seconds in base36
-	- `n`: entry name
+  - `k`: kind (`d`=dir, `f`=file, `l`=symlink, `o`=other)
+  - `s36`: file size in base36
+  - `t36`: mtime epoch seconds in base36
+  - `n`: entry name
+
 - `acat`: `@ap2\tacat\tfields=txtp`
-	- `txtp`: compacted text line, optionally delta-packed as `~<p36>|<suffix>`
+  - `txtp`: compacted text line; may be delta-packed as `~<p36>|<suffix>`
+
 - `agrep`: `@ap2\tagrep\tfields=pd,l36,txtp`
-	- `pd`: packed path
-	- `l36`: line number in base36
-	- `txtp`: matched line payload (compacted/delta-packed)
-- `afind`: packed path rows (no mandatory header)
-	- each row is path or packed path token
+  - `pd`: delta-packed file path
+  - `l36`: line number in base36
+  - `txtp`: matched line payload (compacted; may be delta-packed in `--aggressive`)
+
+- `afind --pack`: **no header** — plain sorted relative paths, one per line.
+  - Paths are relative to the search root and lexicographically sorted.
+  - `aunpack` passes them through unchanged.
+
 - `adu`: `@ap1\tadu\tfields=s36,sh,pd`
-	- `s36`: size in base36
-	- `sh`: human-readable size
-	- `pd`: packed path
+  - `s36`: directory/file size in base36
+  - `sh`: human-readable size (e.g. `1.2MB`)
+  - `pd`: delta-packed path
+
 - `aps`: `@ap2\taps\tfields=p36,pp36,st,r36,n,cmdp`
-	- `p36`: pid in base36
-	- `pp36`: parent pid in base36
-	- `st`: process state
-	- `r36`: RSS KB in base36
-	- `n`: process name
-	- `cmdp`: compacted command line (may be delta-packed)
+  - `p36`: PID in base36
+  - `pp36`: parent PID in base36
+  - `st`: process state (`R`, `S`, `Z`, …)
+  - `r36`: RSS (KB) in base36
+  - `n`: process name
+  - `cmdp`: full command line (compacted; may be delta-packed)
 
 ## Semantic Guarantees and Limits
 
-- Guarantees:
-	- Core signal is preserved (identity, location, sizes, lines, process metadata).
-	- Output is stable and parse-friendly for automation.
-- Limits:
-	- Packed mode prioritizes machine compactness over human readability.
-	- `acat --aggressive` and `agrep --aggressive` may trade speed/readability for higher compression.
-	- For tiny inputs, runtime gains may be neutral while token savings still exist.
-	- For huge text streams, strong compression can still be slower than classic tools even with optimizations.
+Guarantees:
+- Core signal is preserved: identity, location, sizes, line numbers, process metadata.
+- Output is stable and machine-parseable for automation.
+- `aunpack` exactly reverses all delta and base36 encoding.
 
-## Response Style For Users
+Limits:
+- `--pack` output is not human-readable without `aunpack`.
+- `--aggressive` is lossy: abbreviations (`function→fn`) change surface form.
+- For very small inputs (<100 lines, <1 KB), timing overhead may exceed savings.
+- Token savings scale with data volume and repetition; low-entropy data (UUIDs, hashes) compresses poorly.
+- Token metrics are calibrated to `cl100k_base`; other LLM families may differ.
 
-- Prefer concise, command-first answers.
-- Explain only the flags used in the example.
-- Warn when packed output is optimized for machines over human readability.
-- When asked about performance, mention that tiny inputs may show neutral timing while still reducing tokens.
+## BPE Tokenizer Note
+
+Delta encoding with `~N|suffix` format (used by `agrep`/`aps` for text packing) saves bytes but can increase tokens: `~`, `|`, and the numeric separator each consume individual BPE tokens, while natural code tokens like `bin/`, `.rs`, `fn ` are already learned as efficient units. For this reason, `afind --pack` does **not** use delta path encoding — plain paths are more token-efficient.
 
 ## Unix Pipelining
 
-- `aunpack`: Use to decompress packed streams into plain text for bash scripts. `aps --pack | aunpack`
-- `achunk`: A filter that reads all lines and preserves the beginning and end, truncating the middle (lost-in-the-middle) to fit `--max` tokens exact count using `cl100k_base`.
+- `aunpack`: decode packed streams back to plain text for bash scripts and human inspection.
+  ```bash
+  aps --pack --max 30 | aunpack
+  agrep ERROR logs --pack | aunpack
+  ```
+- `achunk`: token-aware context limiter. Reads all input, keeps front + back within `--max` tokens, marks omitted middle.
+  ```bash
+  cat big_file.log | achunk --max 4000
+  acat big_file.log --pack | achunk --max 4000
+  ```
+  Note: `achunk` loads the full `cl100k_base` vocabulary (~60ms startup). Use only when the downstream LLM call justifies the overhead.

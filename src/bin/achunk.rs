@@ -19,7 +19,7 @@ fn main() {
 
     let stdin = io::stdin();
     let stdout = io::stdout();
-    let mut reader = stdin.lock();
+    let reader = stdin.lock();
     let mut writer = BufWriter::new(stdout.lock());
 
     let mut lines = Vec::new();

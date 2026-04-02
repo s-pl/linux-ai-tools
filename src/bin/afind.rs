@@ -3,7 +3,7 @@ use std::fs;
 use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
 
-use ai_linux_tools::{PathPacker, is_hidden, skip_heavy_dir};
+use ai_linux_tools::{is_hidden, skip_heavy_dir};
 
 fn search(
     root: &Path,
@@ -30,10 +30,13 @@ fn search(
         if !include_hidden && is_hidden(&path) {
             continue;
         }
-        let Ok(md) = entry.metadata() else {
-            continue;
+        // file_type() reads d_type from the dirent struct (getdents64 on Linux) —
+        // no extra fstatat() syscall unlike metadata().
+        let file_type = match entry.file_type() {
+            Ok(ft) => ft,
+            Err(_) => continue,
         };
-        let is_dir = md.is_dir();
+        let is_dir = file_type.is_dir();
         if is_dir && skip_heavy_dir(&path) {
             continue;
         }
@@ -48,7 +51,7 @@ fn search(
         };
 
         let type_ok = match only_type {
-            Some('f') => md.is_file(),
+            Some('f') => file_type.is_file(),
             Some('d') => is_dir,
             _ => true,
         };
@@ -138,12 +141,15 @@ fn main() {
     let mut out = BufWriter::new(stdout.lock());
 
     if pack {
-        writeln!(out, "@ap1\tafind\tfields=pd").unwrap();
-        let mut path_packer = PathPacker::default();
+        // Emit sorted relative paths (no header, no delta encoding).
+        // Rationale: ~N|suffix delta tokens tokenize WORSE than full paths in cl100k_base
+        // (e.g. "~5|du.rs" = 6 tok vs "bin/adu.rs" = 5 tok), and the @ap1 header costs
+        // 8 tokens of fixed overhead. Plain relative paths are token-optimal.
+        // aunpack passes non-@ap input through unchanged.
         let root_prefix = format!("{}/", root.display());
         for path in results.into_iter().take(max_results) {
             let rel = path.strip_prefix(&root_prefix).unwrap_or(&path).to_string();
-            writeln!(out, "{}", path_packer.pack(&rel)).unwrap();
+            writeln!(out, "{}", rel).unwrap();
         }
     } else {
         for path in results.into_iter().take(max_results) {

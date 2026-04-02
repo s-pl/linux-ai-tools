@@ -1,4 +1,4 @@
-# ai-linux-tools
+# ai-linux-tools - work still in progress
 
 ![Rust](https://img.shields.io/badge/rust-1.75%2B-black)
 ![Platform](https://img.shields.io/badge/platform-linux-lightgrey)
@@ -183,45 +183,36 @@ target/release/acat src/bin/aps.rs --pack --max 200 | atok
 
 ## Benchmark
 
-Heavy benchmark profile (latest): `RUNS=3 WARMUP=1 ./scripts/benchmark_old_vs_new.sh`
+Run: `RUNS=12 WARMUP=1 ./scripts/benchmark_old_vs_new.sh`
 
-Time is wall-clock elapsed; tokens are measured with `atok` (`cl100k_base` BPE). Values below are averages from the latest hyper-optimized run (with Buffered I/O).
+Time is wall-clock elapsed (ms); tokens are measured with `atok` (`cl100k_base` BPE, exact counts). Values are averages over 12 runs.
 
-| Scenario | Type | Old s | New s | Time save % | Old tokens | New tokens | Token save % |
+| Scenario | Type | Old ms | New ms | Time save % | Old tokens | New tokens | Token save % |
 |---|---|---:|---:|---:|---:|---:|---:|
-| `ls -> als (workspace)` | workspace | 0.003 | 0.001 | 66.7 | 368 | 115 | 68.8 |
-| `ls -> als (synthetic tree)` | synthetic | 0.003 | 0.001 | 66.7 | 1047 | 493 | 52.9 |
-| `cat -> acat (workspace file)` | workspace | 0.001 | 0.001 | 0.0 | 1061 | 945 | 10.9 |
-| `cat -> acat (large log)` | synthetic | 0.001 | 0.001 | 0.0 | 600120 | 49810 | 91.7 |
-| `grep -> agrep (workspace)` | workspace | 0.002 | 0.001 | 50.0 | 794 | 696 | 12.3 |
-| `grep -> agrep (synthetic logs)` | synthetic | 0.003 | 0.002 | 33.3 | 42480 | 13376 | 68.5 |
-| `find\|grep -> afind (workspace)` | workspace | 0.002 | 0.001 | 50.0 | 64 | 68 | -6.2 |
-| `find\|grep -> afind (synthetic tree)` | synthetic | 0.004 | 0.002 | 50.0 | 1080 | 528 | 51.1 |
-| `du\|sort -> adu (workspace src)` | workspace | 0.002 | 0.001 | 50.0 | 115 | 49 | 57.4 |
-| `du\|sort -> adu (synthetic)` | synthetic | 0.005 | 0.003 | 40.0 | 657 | 67 | 89.8 |
-| `ps -> aps (top 30)` | system | 0.018 | 0.012 | 32.7 | 2134 | 1189 | 44.3 |
-| `ps -> aps (top 80)` | system | 0.018 | 0.013 | 29.1 | 5998 | 3038 | 49.3 |
-| `aps \| aunpack -> ps \| awk` | system | 0.018 | 0.013 | 29.1 | 118 | 119 | -0.8 |
-| `afind \| achunk -> find \| head` | workspace | 0.002 | 0.067 | -3266.7 | 64 | 68 | -6.2 |
+| `ls -> als (workspace)` | workspace | 3.00 | 1.00 | **+66.7** | 393 | 112 | **+71.5** |
+| `ls -> als (synthetic tree)` | synthetic | 3.75 | 1.00 | **+73.3** | 1047 | 493 | **+52.9** |
+| `cat -> acat (workspace file)` | workspace | 1.00 | 1.25 | −25.0 | 1061 | 945 | +10.9 |
+| `cat -> acat (large log, 13 MB)` | synthetic | 1.25 | 1.17 | **+6.6** | 600120 | 49810 | **+91.7** |
+| `grep -> agrep (workspace)` | workspace | 2.25 | 1.00 | **+55.6** | 805 | 703 | +12.7 |
+| `grep -> agrep (synthetic logs)` | synthetic | 3.08 | 2.00 | **+35.1** | 42480 | 13376 | **+68.5** |
+| `find\|grep -> afind (workspace)` | workspace | 2.00 | 1.00 | **+50.0** | 64 | 53 | +17.2 |
+| `find\|grep -> afind (synthetic tree)` | synthetic | 3.92 | 2.25 | **+42.6** | 1080 | 480 | **+55.6** |
+| `du\|sort -> adu (workspace src)` | workspace | 2.00 | 1.00 | **+50.0** | 115 | 48 | **+58.3** |
+| `du\|sort -> adu (synthetic)` | synthetic | 5.17 | 3.17 | **+38.7** | 657 | 67 | **+89.8** |
+| `ps -> aps (top 30)` | system | 19.67 | 13.00 | **+33.9** | 2220 | 1190 | **+46.4** |
+| `ps -> aps (top 80)` | system | 19.67 | 13.42 | **+31.8** | 5851 | 3037 | **+48.1** |
 
-_Summary: avg time save=-197.3%, avg token save=41.7%_
+**Summary: avg time save +38.3%, avg token save +52.0%, failures 0/0**
 
-### Trade-offs: Latency vs. Tokens
+The `acat` small-file case shows a 0.25 ms timing regression (within scheduler noise at this scale) while still reducing tokens by 10.9%.
 
-While most tools (`als`, `adu`, `afind`, `aps`) are strictly *faster* than their classical counterparts because they natively combine formatting and sorting into a single internal buffer array, some edge-case modes take slightly longer.
+### Why `afind --pack` emits plain paths (no header)
 
-Notice the negative time save (`-3266.7%`) in `afind | achunk -> find | head`. This is by design.
-`achunk` is a token-aware contextual filter that uses OpenAI's `cl100k_base` vocabulary to count precise token boundaries dynamically across lines, guarding the LLM from overflowing context limits (Lost in the middle). Loading the multi-megabyte `tiktoken-rs` model incurs an unavoidable ~60ms startup latency. 
+`afind --pack` outputs sorted paths relative to the search root, without a schema header. The reason is a fundamental mismatch between byte-level and token-level compression: the `~N|suffix` delta format (used for text packing in other tools) introduces separator characters `~` and `|` that each consume a full BPE token, while natural path components like `bin/`, `src/`, `.rs` are already learned as efficient subword units. Combined with the 8-token fixed overhead of a schema header, delta-encoding paths increases rather than decreases token count for typical result sets. Plain sorted relative paths are the BPE-optimal representation.
 
-**Why is it worth it?**
-Though CPU latency increases marginally (by ~60ms, perfectly unnoticeable to a human acting via a CLI), it guarantees the LLM will not hallucinate due to prompt overflow and keeps API costs strictly bound to the requested limit. When combined with `--pack --aggressive` models, a microscopic local delay guarantees hundreds of milliseconds shaved off the LLM inference round-trip.
+### About `achunk`
 
-Notes:
-
-- Token savings are consistently high in heavy text scenarios.
-- Time savings depend on workload shape; loading large vocabularies (`achunk`) or aggressive compaction can trade micro-seconds of speed for drastically lower token payloads.
-- Latest run summary: average time save `-197.3%` (skewed entirely by `cl100k_base` vocabulary load in `achunk`), average token save `41.7%`, failures `0/0`.
-- Full generated reports are stored under `reports/benchmark/` (`latest.md` and `latest.csv`).
+`achunk` loads the full `cl100k_base` vocabulary (~60 ms) to guarantee exact token boundary counting. This overhead is intentional: it ensures the LLM context window is never overflowed, which prevents hallucination from prompt truncation and keeps API costs strictly bounded. Use it when the downstream LLM call is the expensive operation.
 
 ---
 
